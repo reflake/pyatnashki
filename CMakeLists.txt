@@ -32,4 +32,5 @@ target_link_libraries(pyatnashki
 	PRIVATE 
 		SDL2::SDL2-static
 		SDL2_image
+		SDL2_ttf
 	)

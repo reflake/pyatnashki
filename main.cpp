@@ -3,6 +3,7 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 
 #include <algorithm>
 #include <stdio.h>
@@ -80,6 +81,11 @@ int main(int argc, char *args[])
 		cerr << "Couldn't initialize SDL_image: " << IMG_GetError();
 	}
 
+	if (TTF_Init() == -1)
+	{
+		cerr << "Couldn't initialize SDL_ttf: " << TTF_GetError();
+	}
+
 	nativeGameCycle(args[1], window);
 
 	for (auto surface : loadedSurfaces)
@@ -92,6 +98,7 @@ int main(int argc, char *args[])
 
 	IMG_Quit();
 	SDL_Quit();
+	TTF_Quit();
 
 	return 0;
 }
