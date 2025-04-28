@@ -332,16 +332,16 @@ void handleKeys(SDL_Event &ev, int &h, int &v)
 	switch (ev.key.keysym.sym)
 	{
 		case SDLK_UP:
-			--v;
-			break;
-		case SDLK_DOWN:
 			++v;
 			break;
+		case SDLK_DOWN:
+			--v;
+			break;
 		case SDLK_LEFT:
-			--h;
+			++h;
 			break;
 		case SDLK_RIGHT:
-			++h;
+			--h;
 			break;
 	}
 }
