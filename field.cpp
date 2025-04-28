@@ -1,11 +1,12 @@
 #include "field.h"
 
 #include <algorithm>
-#include <exception>
+#include <stdexcept>
 
 using std::min;
 using std::max;
 using std::swap;
+using std::runtime_error;
 
 Field::Field(int size) : size(size)
 {
@@ -43,7 +44,7 @@ void Field::Turn(int &i, int &j, int h, int v)
 		return;
 
 	if (h != 0 && v != 0)
-		throw new std::exception("Cannot move tile diagonally!");
+		throw new runtime_error("Cannot move tile diagonally!");
 
 	int newI = min(max(i + v, 0), size - 1);
 	int newJ = min(max(j + h, 0), size - 1);

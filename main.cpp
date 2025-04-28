@@ -1,10 +1,15 @@
-#include <algorithm>
+#define SDL_MAIN_HANDLED
+
 #include <SDL.h>
+#include <SDL2/SDL_image.h>
+
+#include <algorithm>
 #include <stdio.h>
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
+#include <vector>
 
 #include "field.h"
 #include "shuffler.h"
@@ -56,14 +61,14 @@ int main(int argc, char *args[])
 
 	if (SDL_Init(SDL_INIT_VIDEO) < 0)
 	{
-		cerr << "А хуй тебе! Ошибка: " << SDL_GetError();
+		cerr << "Couldn't initialize SDL: " << SDL_GetError();
 	}
 
 	window = SDL_CreateWindow("Epifashki shashki", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
 
 	if (window == nullptr)
 	{
-		cerr << "Где окно? Спиздили! Ошибка: " << SDL_GetError();
+		cerr << "Couldn't create SDL window: " << SDL_GetError();
 	}
 
 	nativeGameCycle(args[1], window);
@@ -77,7 +82,12 @@ int main(int argc, char *args[])
 
 SDL_Surface* loadImage(const char* path, int squareSide)
 {
-	SDL_Surface* originalImage = SDL_LoadBMP(path);
+	SDL_Surface* originalImage = IMG_Load(path);
+
+	if (originalImage == nullptr)
+	{
+		throw std::runtime_error("Couldn't load image: " + std::string(SDL_GetError()));
+	}
 
 	SDL_Surface* newImage = SDL_CreateRGBSurface(
 		originalImage->flags,
