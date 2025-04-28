@@ -7,6 +7,7 @@ class Shuffler
 {
 public:
 
+	Shuffler() = default;
 	Shuffler(int seed, int difficulty);
 	bool isDone(Field& field);
 	void next(Field& field, int& i, int& j);

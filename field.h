@@ -1,9 +1,11 @@
 #pragma once
 
+#include <vector>
 class Field
 {
 public:
 
+	Field();
 	Field(int size);
 
 	void Detach(int i, int j);
@@ -12,7 +14,7 @@ public:
 
 	bool IsAssembled();
 
-	int** GetState() const { return state; }
+	const int* GetState() const { return state.data(); }
 	int GetSize() const { return size; }
 
 	const static int empty_cell = -1;
@@ -20,5 +22,5 @@ public:
 private:
 
 	int size;
-	int** state;
+	std::vector<int> state;
 };

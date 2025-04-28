@@ -1,6 +1,7 @@
+#include <SDL_surface.h>
 #define SDL_MAIN_HANDLED
 
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 
 #include <algorithm>
@@ -45,11 +46,12 @@ void nativeGameCycle(const char* levelsPath, SDL_Window* window);
 void handleKeys(SDL_Event& ev, int& h, int& v);
 void gameInputCycle(Field &field, int n, int h, int v);
 
+Field gameField;
 SDL_Window* window = nullptr;
 SDL_Surface* currentLevelSurface = nullptr;
-Field* gameField = nullptr;
-Shuffler* shuffler = nullptr;
+Shuffler shuffler;
 GameState currentGameState;
+std::vector<SDL_Surface*> loadedSurfaces;
 int padding = 1;
 
 int main(int argc, char *args[])
@@ -71,18 +73,35 @@ int main(int argc, char *args[])
 		cerr << "Couldn't create SDL window: " << SDL_GetError();
 	}
 
+	auto imgFlags = IMG_INIT_JPG | IMG_INIT_PNG;
+
+	if (!(IMG_Init(imgFlags) & imgFlags))
+	{
+		cerr << "Couldn't initialize SDL_image: " << IMG_GetError();
+	}
+
 	nativeGameCycle(args[1], window);
+
+	for (auto surface : loadedSurfaces)
+	{
+		SDL_FreeSurface(surface);
+	}
+	loadedSurfaces.clear();
 
 	SDL_DestroyWindow(window);
 
+	IMG_Quit();
 	SDL_Quit();
 
 	return 0;
 }
 
-SDL_Surface* loadImage(const char* path, int squareSide)
+SDL_Surface* loadImage(const std::filesystem::path& path, int squareSide)
 {
-	SDL_Surface* originalImage = IMG_Load(path);
+	auto stringPath = path.string();
+	auto cStrPath = stringPath.c_str();
+	SDL_Surface* originalImage = IMG_Load(cStrPath);
+	loadedSurfaces.push_back(originalImage);
 
 	if (originalImage == nullptr)
 	{
@@ -93,7 +112,7 @@ SDL_Surface* loadImage(const char* path, int squareSide)
 		originalImage->flags,
 		squareSide,
 		squareSide,
-		32,
+		originalImage->format->BitsPerPixel,
 		originalImage->format->Rmask,
 		originalImage->format->Gmask,
 		originalImage->format->Bmask,
@@ -124,10 +143,15 @@ SDL_Surface* loadImage(const char* path, int squareSide)
 
 	src.w = sz;
 	src.h = sz;
-	
-	SDL_BlitScaled(originalImage, &src, newImage, nullptr);
 
-	SDL_FreeSurface(originalImage);
+	SDL_Rect dstRect = SDL_Rect{
+		0,
+		0,
+		squareSide,
+		squareSide
+	};
+	
+	SDL_BlitScaled(originalImage, &src, newImage, &dstRect);
 
 	return newImage;
 }
@@ -136,7 +160,7 @@ int detachedI, detachedJ;
 
 void startLevel(Level level, int n)
 {
-	shuffler = new Shuffler(time(nullptr), 50);
+	shuffler = Shuffler(time(nullptr), 50);
 
 	currentGameState = GameState::FadeIn;
 	currentLevelSurface = level.levelSurface;
@@ -144,8 +168,8 @@ void startLevel(Level level, int n)
 	detachedI = n - 1;
 	detachedJ = n - 1;
 
-	gameField = new Field(n);
-	gameField->Detach(detachedI, detachedJ);
+	gameField = Field(n);
+	gameField.Detach(detachedI, detachedJ);
 
 	padding = 600 / n / 2;
 }
@@ -171,11 +195,11 @@ void nativeGameCycle(const char* levelsPath, SDL_Window* window)
 	{
 		if (entry.path().filename() == "winner.bmp")
 		{
-			winnerLevel = { loadImage(entry.path().string().c_str(), squareSide) };
+			winnerLevel = { loadImage(entry.path(), squareSide) };
 		}
 		else
 		{
-			levels.insert(levels.end(), Level{ loadImage(entry.path().string().c_str(), squareSide) });
+			levels.insert(levels.end(), Level{ loadImage(entry.path(), squareSide) });
 		}
 	}
 
@@ -249,7 +273,7 @@ void nativeGameCycle(const char* levelsPath, SDL_Window* window)
 		{
 			for (int j = 0; j < n; j++)
 			{
-				if (gameField->GetState()[i][j] == Field::empty_cell)
+				if (gameField.GetState()[i * n + j] == Field::empty_cell)
 					continue;
 
 				SDL_Rect dstRect = SDL_Rect{
@@ -259,7 +283,7 @@ void nativeGameCycle(const char* levelsPath, SDL_Window* window)
 					squareSide / n - padding * 2
 				};
 				
-				int index = gameField->GetState()[i][j];
+				int index = gameField.GetState()[i * n + j];
 				int sI, sJ;
 
 				sI = index / n;
@@ -279,16 +303,16 @@ void nativeGameCycle(const char* levelsPath, SDL_Window* window)
 		switch (currentGameState)
 		{
 			case GameState::Shuffling:
-				shuffler->next(*gameField, detachedI, detachedJ);
+				shuffler.next(gameField, detachedI, detachedJ);
 
-				if (shuffler->isDone(*gameField))
+				if (shuffler.isDone(gameField))
 					currentGameState = GameState::InProgress;
 
 				break;
 			case GameState::InProgress:
-				gameInputCycle(*gameField, n, keyHorizontal, keyVertical);
+				gameInputCycle(gameField, n, keyHorizontal, keyVertical);
 
-				if (gameField->IsAssembled() && !isWinnersLevel)
+				if (gameField.IsAssembled() && !isWinnersLevel)
 				{
 					++currentLevel;
 					currentGameState = GameState::FadeOut;
