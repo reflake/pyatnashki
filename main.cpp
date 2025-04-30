@@ -1,4 +1,3 @@
-#include <SDL3/SDL_timer.h>
 #include <algorithm>
 #include <stdexcept>
 #include <stdio.h>
@@ -23,10 +22,11 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
+#include <SDL3/SDL_timer.h>
 
 //Screen dimension constants
 const int SCREEN_WIDTH = 600;
-const int SCREEN_HEIGHT = 800;
+const int SCREEN_HEIGHT = 720;
 
 namespace fs = std::filesystem;
 
@@ -71,6 +71,7 @@ void gameInputCycle(Field &field, int n);
 
 Field gameField;
 SDL_Texture* currentLevelTexture = nullptr;
+SDL_Texture* helpTexture = nullptr;
 Shuffler shuffler;
 GameState currentGameState;
 TTF_Font* font = nullptr;
@@ -213,6 +214,14 @@ SDL_AppResult initGame(const char* levelsPath)
 
 	app.currentLevel = app.levels.front();
 	startLevel(app.currentLevel, FieldSide);
+
+	// Create text texture of instructions for the player
+	const char* text = "Place each piece in its place\nUse arrow keys to move the pieces";
+
+	SDL_Surface* textSurface = TTF_RenderText_Blended_Wrapped(font, text, 0, { 34, 34, 34 }, 400);
+	helpTexture = SDL_CreateTextureFromSurface(app.renderer, textSurface);
+
+	SDL_DestroySurface(textSurface);
 	
 	return SDL_APP_CONTINUE;
 }
@@ -287,24 +296,16 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 				1.0f * squareSide / FieldSide - padding * 2
 			};
 
-			SDL_SetRenderDrawColor(app.renderer, 255, 0, 0, 255);
 			SDL_RenderTexture(app.renderer, currentLevelTexture, &srcRect, &dstRect);
 		}
 	}
 
-	/*{
-		SDL_Surface* textSurface = TTF_RenderText_Solid(font, "Hello, world!", 0, { 0, 0, 0 });
-		SDL_Rect textRect = SDL_Rect{
-			0,
-			0,
-			textSurface->w,
-			textSurface->h
-		};
+	{
+		SDL_FRect dstRect = SDL_FRect{ 24, squareSide + 24 };
+		SDL_GetTextureSize(helpTexture, &dstRect.w, &dstRect.h);
 
-		SDL_BlitSurface(textSurface, &textRect, screenSurface, nullptr);
-
-		SDL_DestroySurface(textSurface);
-	}*/
+		SDL_RenderTexture(app.renderer, helpTexture, nullptr, &dstRect);
+	}
 
 	switch (currentGameState)
 	{
