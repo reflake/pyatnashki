@@ -25,12 +25,16 @@ else()
 endif()
 
 # Find SDL2 package
-find_package(SDL2 REQUIRED)
+find_package(SDL3 REQUIRED CONFIG)
+find_package(SDL3_image REQUIRED CONFIG)
+find_package(SDL3_ttf REQUIRED CONFIG)
 
 # Link SDL2 library
 target_link_libraries(pyatnashki 
 	PRIVATE 
-		SDL2::SDL2-static
-		SDL2_image
-		SDL2_ttf
+		SDL3::SDL3
+		SDL3_image
+		SDL3_ttf
 	)
+
+file(COPY font/RobotoCondensed-Light.ttf DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/font)

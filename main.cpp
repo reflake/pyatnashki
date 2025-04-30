@@ -1,11 +1,6 @@
-#include <SDL_surface.h>
-#define SDL_MAIN_HANDLED
-
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_ttf.h>
-
+#include <SDL3/SDL_timer.h>
 #include <algorithm>
+#include <stdexcept>
 #include <stdio.h>
 #include <iostream>
 #include <cstdlib>
@@ -16,9 +11,22 @@
 #include "field.h"
 #include "shuffler.h"
 
+#define SDL_MAIN_USE_CALLBACKS
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+#include <SDL3/SDL_log.h>
+#include <SDL3/SDL_render.h>
+#include <SDL3/SDL_surface.h>
+#include <SDL3/SDL_rect.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_video.h>
+#include <SDL3_image/SDL_image.h>
+#include <SDL3_ttf/SDL_ttf.h>
+
 //Screen dimension constants
 const int SCREEN_WIDTH = 600;
-const int SCREEN_HEIGHT = 600;
+const int SCREEN_HEIGHT = 800;
 
 namespace fs = std::filesystem;
 
@@ -33,7 +41,21 @@ enum class GameState
 
 struct Level
 {
-	SDL_Surface* levelSurface;
+	int index = 0;
+	SDL_Texture* levelTexture;
+
+	Level() = default;
+	Level(int index, SDL_Texture* levelTexture) : index(index), levelTexture(levelTexture) {}
+
+	bool operator==(const Level& other) const
+	{
+		return index == other.index;
+	}
+
+	bool operator!=(const Level& other) const
+	{
+		return !(*this == other);
+	}
 };
 
 using std::cin;
@@ -43,89 +65,66 @@ using std::cerr;
 using std::min;
 using std::max;
 
-void nativeGameCycle(const char* levelsPath, SDL_Window* window);
-void handleKeys(SDL_Event& ev, int& h, int& v);
-void gameInputCycle(Field &field, int n, int h, int v);
+SDL_AppResult initGame(const char* levelsPath);
+void handleKeys(SDL_Event* ev);
+void gameInputCycle(Field &field, int n);
 
 Field gameField;
-SDL_Window* window = nullptr;
-SDL_Surface* currentLevelSurface = nullptr;
+SDL_Texture* currentLevelTexture = nullptr;
 Shuffler shuffler;
 GameState currentGameState;
-std::vector<SDL_Surface*> loadedSurfaces;
+TTF_Font* font = nullptr;
 int padding = 1;
+constexpr int FieldSide = 3;
+constexpr int squareSide = 600;
 
-int main(int argc, char *args[])
+struct App
+{
+	bool isWinnersLevel = false;
+	int keyHorizontal = 0;
+	int keyVertical = 0;
+	std::vector<Level> levels;
+	Level currentLevel;
+	Level winnerLevel;
+	SDL_Window* window = nullptr;
+	SDL_Renderer* renderer = nullptr;
+};
+
+App app;
+
+SDL_AppResult SDL_AppInit(void **appState, int argc, char *args[])
 {
 	if (argc < 2)
-		return 1;
+		return SDL_APP_FAILURE;
 
-	SDL_Window* window = nullptr;
-
-	if (SDL_Init(SDL_INIT_VIDEO) < 0)
+	if (!SDL_CreateWindowAndRenderer("Epifashki shashki", SCREEN_WIDTH, SCREEN_HEIGHT, 0, &app.window, &app.renderer))
 	{
-		cerr << "Couldn't initialize SDL: " << SDL_GetError();
+		SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
+		return SDL_APP_FAILURE;
 	}
 
-	window = SDL_CreateWindow("Epifashki shashki", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-
-	if (window == nullptr)
+	if (!TTF_Init())
 	{
-		cerr << "Couldn't create SDL window: " << SDL_GetError();
+		cerr << "Couldn't initialize SDL_ttf: " << SDL_GetError();
+		return SDL_APP_FAILURE;
 	}
 
-	auto imgFlags = IMG_INIT_JPG | IMG_INIT_PNG;
-
-	if (!(IMG_Init(imgFlags) & imgFlags))
-	{
-		cerr << "Couldn't initialize SDL_image: " << IMG_GetError();
-	}
-
-	if (TTF_Init() == -1)
-	{
-		cerr << "Couldn't initialize SDL_ttf: " << TTF_GetError();
-	}
-
-	nativeGameCycle(args[1], window);
-
-	for (auto surface : loadedSurfaces)
-	{
-		SDL_FreeSurface(surface);
-	}
-	loadedSurfaces.clear();
-
-	SDL_DestroyWindow(window);
-
-	IMG_Quit();
-	SDL_Quit();
-	TTF_Quit();
-
-	return 0;
+	return initGame(args[1]);
 }
 
-SDL_Surface* loadImage(const std::filesystem::path& path, int squareSide)
+SDL_Texture* loadImage(const std::filesystem::path& path, int squareSide)
 {
 	auto stringPath = path.string();
 	auto cStrPath = stringPath.c_str();
-	SDL_Surface* originalImage = IMG_Load(cStrPath);
-	loadedSurfaces.push_back(originalImage);
+	auto originalImage = IMG_Load(cStrPath);
 
 	if (originalImage == nullptr)
 	{
-		throw std::runtime_error("Couldn't load image: " + std::string(SDL_GetError()));
+		SDL_Log("Couldn't load image: %s", SDL_GetError());
+		throw std::runtime_error("Couldn't load image");
 	}
 
-	SDL_Surface* newImage = SDL_CreateRGBSurface(
-		originalImage->flags,
-		squareSide,
-		squareSide,
-		originalImage->format->BitsPerPixel,
-		originalImage->format->Rmask,
-		originalImage->format->Gmask,
-		originalImage->format->Bmask,
-		originalImage->format->Amask
-	);
-	
+	// Crop source image to square
 	SDL_Rect src;
 	int sz;
 
@@ -144,23 +143,27 @@ SDL_Surface* loadImage(const std::filesystem::path& path, int squareSide)
 
 		int topOffset = (originalImage->h - sz) / 2;
 
-		src.x = topOffset;
-		src.y = 0;
+		src.x = 0;
+		src.y = topOffset;
 	}
 
 	src.w = sz;
 	src.h = sz;
 
-	SDL_Rect dstRect = SDL_Rect{
-		0,
-		0,
-		squareSide,
-		squareSide
-	};
-	
-	SDL_BlitScaled(originalImage, &src, newImage, &dstRect);
+	auto croppedImage = SDL_CreateSurface(squareSide, squareSide, originalImage->format);
 
-	return newImage;
+	SDL_BlitSurfaceScaled(originalImage, &src, croppedImage, nullptr, SDL_SCALEMODE_LINEAR);
+
+	SDL_Texture* texture = SDL_CreateTextureFromSurface(app.renderer, croppedImage);
+	if (texture == nullptr)
+	{
+		throw std::runtime_error("Couldn't create texture: " + std::string(SDL_GetError()));
+	}
+
+	SDL_DestroySurface(originalImage);
+	SDL_DestroySurface(croppedImage);
+
+	return texture;
 }
 
 int detachedI, detachedJ;
@@ -170,7 +173,7 @@ void startLevel(Level level, int n)
 	shuffler = Shuffler(time(nullptr), 50);
 
 	currentGameState = GameState::FadeIn;
-	currentLevelSurface = level.levelSurface;
+	currentLevelTexture = level.levelTexture;
 
 	detachedI = n - 1;
 	detachedJ = n - 1;
@@ -181,185 +184,206 @@ void startLevel(Level level, int n)
 	padding = 600 / n / 2;
 }
 
-void nativeGameCycle(const char* levelsPath, SDL_Window* window)
+SDL_AppResult initGame(const char* levelsPath)
 {
-	SDL_Surface* screenSurface = nullptr;
-	screenSurface = SDL_GetWindowSurface(window);
-	bool quit = false;
-	SDL_Event e;
-
-	const int squareSide = 600;
-
-	int keyHorizontal = 0;
-	int keyVertical = 0;
-
 	// load levels
 	std::string path = levelsPath;
-	std::vector<Level> levels;
-	Level winnerLevel;
+
+	int index = 0;
 
 	for (const auto& entry : fs::directory_iterator(path))
 	{
 		if (entry.path().filename() == "winner.bmp")
 		{
-			winnerLevel = { loadImage(entry.path(), squareSide) };
+			app.winnerLevel = { index++, loadImage(entry.path(), squareSide) };
 		}
 		else
 		{
-			levels.insert(levels.end(), Level{ loadImage(entry.path(), squareSide) });
+			app.levels.emplace_back(index++, loadImage(entry.path(), squareSide));
 		}
 	}
 
-	int n = 4;
-	auto currentLevel = levels.begin();
-	startLevel(*currentLevel, n);
-	bool isWinnersLevel = false;
+	font = TTF_OpenFont("font/RobotoCondensed-Light.ttf", 24);
+
+	if (font == nullptr)
+	{
+		cerr << "Couldn't load font";
+		return SDL_APP_FAILURE;
+	}
+
+	app.currentLevel = app.levels.front();
+	startLevel(app.currentLevel, FieldSide);
 	
-	int paddingSpeed = squareSide / n / 50;
-
-	do {
-
-		if (currentGameState == GameState::FadeIn)
-		{
-			padding = padding % (squareSide / n) - paddingSpeed;
-
-			if (padding <= 1)
-			{
-				currentGameState = isWinnersLevel ? GameState::InProgress : GameState::Shuffling;
-				padding = 1;
-			}
-
-			SDL_Delay(8);
-		}
-		else if (currentGameState == GameState::FadeOut)
-		{
-			padding = padding % (squareSide / n) + paddingSpeed;
-
-			if (padding >= squareSide / n / 2)
-			{
-				currentGameState = GameState::End;
-
-				if (currentLevel != levels.end())
-				{
-					startLevel(*currentLevel, n);
-				}
-				else
-				{
-					SDL_SetWindowTitle(window, "Win!");
-					isWinnersLevel = true;
-					startLevel(winnerLevel, n);
-				}
-			}
-
-			SDL_Delay(8);
-		}
-
-		keyHorizontal = 0;
-		keyVertical = 0;
-
-		while (SDL_PollEvent(&e) != 0)
-		{
-			switch(e.type)
-			{
-				case SDL_QUIT:
-					quit = true;
-					break;
-				case SDL_KEYDOWN:
-					handleKeys(e, keyHorizontal, keyVertical);
-					break;
-			}
-		}
-
-		if (keyHorizontal != 0)
-			keyVertical = 0;
-
-		//Clear
-		SDL_FillRect(screenSurface, nullptr, SDL_MapRGB(screenSurface->format, 0xFF, 0xFF, 0xFF));
-
-		for (int i = 0; i < n; i++)
-		{
-			for (int j = 0; j < n; j++)
-			{
-				if (gameField.GetState()[i * n + j] == Field::empty_cell)
-					continue;
-
-				SDL_Rect dstRect = SDL_Rect{
-					j * squareSide / n + padding,
-					i * squareSide / n + padding,
-					squareSide / n - padding * 2,
-					squareSide / n - padding * 2
-				};
-				
-				int index = gameField.GetState()[i * n + j];
-				int sI, sJ;
-
-				sI = index / n;
-				sJ = index % n;
-
-				SDL_Rect srcRect = SDL_Rect{
-					sJ * squareSide / n + padding,
-					sI * squareSide / n + padding,
-					squareSide / n - padding * 2,
-					squareSide / n - padding * 2
-				};
-
-				SDL_BlitSurface(currentLevelSurface, &srcRect, screenSurface, &dstRect);
-			}
-		}
-
-		switch (currentGameState)
-		{
-			case GameState::Shuffling:
-				shuffler.next(gameField, detachedI, detachedJ);
-
-				if (shuffler.isDone(gameField))
-					currentGameState = GameState::InProgress;
-
-				break;
-			case GameState::InProgress:
-				gameInputCycle(gameField, n, keyHorizontal, keyVertical);
-
-				if (gameField.IsAssembled() && !isWinnersLevel)
-				{
-					++currentLevel;
-					currentGameState = GameState::FadeOut;
-				}
-				break;
-		}
-
-		SDL_UpdateWindowSurface(window);
-
-		SDL_Delay(10);
-
-	} while (!quit);
+	return SDL_APP_CONTINUE;
 }
 
-void handleKeys(SDL_Event &ev, int &h, int &v)
+SDL_AppResult SDL_AppIterate(void *appstate)
 {
-	switch (ev.key.keysym.sym)
+	SDL_Surface* screenSurface = nullptr;
+	screenSurface = SDL_GetWindowSurface(app.window);
+
+	int paddingSpeed = squareSide / FieldSide / 50;
+
+	if (currentGameState == GameState::FadeIn)
+	{
+		padding = padding % (squareSide / FieldSide) - paddingSpeed;
+
+		if (padding <= 1)
+		{
+			currentGameState = app.isWinnersLevel ? GameState::InProgress : GameState::Shuffling;
+			padding = 1;
+		}
+	}
+	else if (currentGameState == GameState::FadeOut)
+	{
+		padding = padding % (squareSide / FieldSide) + paddingSpeed;
+
+		if (padding >= squareSide / FieldSide / 2)
+		{
+			currentGameState = GameState::End;
+
+			if (app.currentLevel != app.levels.back())
+			{
+				app.currentLevel = app.levels[app.currentLevel.index + 1];
+				startLevel(app.currentLevel, FieldSide);
+			}
+			else
+			{
+				SDL_SetWindowTitle(app.window, "Win!");
+				app.isWinnersLevel = true;
+				startLevel(app.winnerLevel, FieldSide);
+			}
+		}
+	}
+
+	// Clear screen
+	SDL_SetRenderDrawColor(app.renderer, 255, 255, 255, 255);
+	SDL_RenderClear(app.renderer);
+
+	for (int i = 0; i < FieldSide; i++)
+	{
+		for (int j = 0; j < FieldSide; j++)
+		{
+			if (gameField.GetState()[i * FieldSide + j] == Field::empty_cell)
+				continue;
+
+			SDL_FRect dstRect = SDL_FRect{
+				1.0f * j * squareSide / FieldSide + padding,
+				1.0f * i * squareSide / FieldSide + padding,
+				1.0f * squareSide / FieldSide - padding * 2,
+				1.0f * squareSide / FieldSide - padding * 2
+			};
+			
+			int index = gameField.GetState()[i * FieldSide + j];
+			int sI, sJ;
+
+			sI = index / FieldSide;
+			sJ = index % FieldSide;
+
+			SDL_FRect srcRect = SDL_FRect{
+				1.0f * sJ * squareSide / FieldSide + padding,
+				1.0f * sI * squareSide / FieldSide + padding,
+				1.0f * squareSide / FieldSide - padding * 2,
+				1.0f * squareSide / FieldSide - padding * 2
+			};
+
+			SDL_SetRenderDrawColor(app.renderer, 255, 0, 0, 255);
+			SDL_RenderTexture(app.renderer, currentLevelTexture, &srcRect, &dstRect);
+		}
+	}
+
+	/*{
+		SDL_Surface* textSurface = TTF_RenderText_Solid(font, "Hello, world!", 0, { 0, 0, 0 });
+		SDL_Rect textRect = SDL_Rect{
+			0,
+			0,
+			textSurface->w,
+			textSurface->h
+		};
+
+		SDL_BlitSurface(textSurface, &textRect, screenSurface, nullptr);
+
+		SDL_DestroySurface(textSurface);
+	}*/
+
+	switch (currentGameState)
+	{
+		case GameState::Shuffling:
+			shuffler.next(gameField, detachedI, detachedJ);
+
+			if (shuffler.isDone(gameField))
+				currentGameState = GameState::InProgress;
+
+			break;
+		case GameState::InProgress:
+			gameInputCycle(gameField, FieldSide);
+
+			if (gameField.IsAssembled() && !app.isWinnersLevel)
+			{
+				currentGameState = GameState::FadeOut;
+			}
+			break;
+	}
+
+	SDL_RenderPresent(app.renderer);
+	SDL_Delay(16);
+
+	return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppEvent(void *appState, SDL_Event *event)
+{
+	switch (event->type) {
+		case SDL_EVENT_KEY_DOWN:
+			handleKeys(event);
+			break;
+		case SDL_EVENT_QUIT:
+			return SDL_APP_SUCCESS;
+	}
+
+	return SDL_APP_CONTINUE;
+}
+
+void handleKeys(SDL_Event *ev)
+{
+	switch (ev->key.key)
 	{
 		case SDLK_UP:
-			++v;
+			++app.keyVertical;
 			break;
 		case SDLK_DOWN:
-			--v;
+			--app.keyVertical;
 			break;
 		case SDLK_LEFT:
-			++h;
+			++app.keyHorizontal;
 			break;
 		case SDLK_RIGHT:
-			--h;
+			--app.keyHorizontal;
 			break;
 	}
 }
 
-void gameInputCycle(Field &field, int n, int h, int v)
+void gameInputCycle(Field &field, int n)
 {
-	if (h == 0 && v == 0)
+	if (app.keyHorizontal == 0 && app.keyVertical == 0)
 		return;
 
-	if (h != 0)
-		v = 0;
+	if (app.keyHorizontal != 0)
+		app.keyVertical = 0;
 
-	field.Turn(detachedI, detachedJ, h, v);
+	field.Turn(detachedI, detachedJ, app.keyHorizontal, app.keyVertical);
+
+	app.keyHorizontal = 0;
+	app.keyVertical = 0;
+}
+
+void SDL_AppQuit(void *appState, SDL_AppResult result)
+{
+	if (font != nullptr)
+	{
+		TTF_CloseFont(font);
+		font = nullptr;
+	}
+
+	TTF_Quit();
 }
