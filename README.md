@@ -1,4 +1,4 @@
-# Pyantashki game (Boss puzzle), Sliding Puzzle made in SDL2
+# Pyantashki game (Boss puzzle), Sliding Puzzle made in SDL3
 
 ## TODO
 - [ ]  Refactor all
