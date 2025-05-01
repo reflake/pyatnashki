@@ -10,6 +10,8 @@
 #include "image.h"
 #include "level.h"
 #include "shuffler.h"
+#include "ui/interface.h"
+#include "ui/ui_text.h"
 
 #define SDL_MAIN_USE_CALLBACKS
 
@@ -64,6 +66,7 @@ struct App
 	Level* currentLevel;
 	SDL_Window* window = nullptr;
 	SDL_Renderer* renderer = nullptr;
+	Interface interface;
 };
 
 App app;
@@ -147,12 +150,12 @@ SDL_AppResult initGame(const char* levelsPath)
 	startLevel(0, FieldSide);
 
 	// Create text texture of instructions for the player
+	app.interface = Interface(app.renderer);
+
 	const char* text = "Place each piece in its place\nUse arrow keys to move the pieces";
+	auto textComponent = app.interface.CreateComponent<Text>(text, SDL_Color{ 34, 34, 34, 255 }, font);
 
-	SDL_Surface* textSurface = TTF_RenderText_Blended_Wrapped(font, text, 0, { 34, 34, 34, 255 }, 400);
-	helpTexture = SDL_CreateTextureFromSurface(app.renderer, textSurface);
-
-	SDL_DestroySurface(textSurface);
+	textComponent->SetRectangle(SDL_FRect{ 24, squareSide + 24, 400, SCREEN_HEIGHT - squareSide - 48 });
 	
 	return SDL_APP_CONTINUE;
 }
@@ -233,12 +236,7 @@ SDL_AppResult SDL_AppIterate(void *_)
 		}
 	}
 
-	{
-		SDL_FRect dstRect = SDL_FRect{ 24, squareSide + 24, 0, 0 };
-		SDL_GetTextureSize(helpTexture, &dstRect.w, &dstRect.h);
-
-		SDL_RenderTexture(app.renderer, helpTexture, nullptr, &dstRect);
-	}
+	app.interface.Draw();
 
 	switch (currentGameState)
 	{

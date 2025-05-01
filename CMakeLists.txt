@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Add the executable
 add_executable(pyatnashki
+	src/ui/interface.cpp
+	src/ui/ui_text.cpp
 	src/main.cpp
 	src/field.cpp
 	src/image.cpp
