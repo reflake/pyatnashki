@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <stdexcept>
 #include <iostream>
 #include <cstdlib>
@@ -6,6 +7,7 @@
 #include <vector>
 
 #include "field.h"
+#include "image.h"
 #include "shuffler.h"
 
 #define SDL_MAIN_USE_CALLBACKS
@@ -40,10 +42,15 @@ enum class GameState
 struct Level
 {
 	int index = 0;
-	SDL_Texture* levelTexture;
+	Image levelImage;
+	bool isVictoryScreen = false;
 
 	Level() = default;
-	Level(int index, SDL_Texture* levelTexture) : index(index), levelTexture(levelTexture) {}
+	Level(int index, Image&& levelImage, bool isVictoryScreen) : 
+		index(index), 
+		levelImage(std::move(levelImage)),
+		isVictoryScreen(isVictoryScreen)
+	{}
 
 	bool operator==(const Level& other) const
 	{
@@ -63,7 +70,6 @@ void handleKeys(SDL_Event* ev);
 void gameInputCycle(Field &field);
 
 Field gameField;
-SDL_Texture* currentLevelTexture = nullptr;
 SDL_Texture* helpTexture = nullptr;
 Shuffler shuffler;
 GameState currentGameState;
@@ -78,8 +84,7 @@ struct App
 	int keyHorizontal = 0;
 	int keyVertical = 0;
 	std::vector<Level> levels;
-	Level currentLevel;
-	Level winnerLevel;
+	Level* currentLevel;
 	SDL_Window* window = nullptr;
 	SDL_Renderer* renderer = nullptr;
 };
@@ -106,68 +111,17 @@ SDL_AppResult SDL_AppInit(void **_, int argc, char *args[])
 	return initGame(args[1]);
 }
 
-SDL_Texture* loadImage(const std::filesystem::path& path, int squareSide)
-{
-	auto stringPath = path.string();
-	auto cStrPath = stringPath.c_str();
-	auto originalImage = IMG_Load(cStrPath);
-
-	if (originalImage == nullptr)
-	{
-		SDL_Log("Couldn't load image: %s", SDL_GetError());
-		throw std::runtime_error("Couldn't load image");
-	}
-
-	// Crop source image to square
-	SDL_Rect src;
-	int sz;
-
-	if (originalImage->w > originalImage->h)
-	{
-		sz = originalImage->h;
-
-		int leftOffset = (originalImage->w - sz) / 2;
-
-		src.x = leftOffset;
-		src.y = 0;
-	}
-	else
-	{
-		sz = originalImage->w;
-
-		int topOffset = (originalImage->h - sz) / 2;
-
-		src.x = 0;
-		src.y = topOffset;
-	}
-
-	src.w = sz;
-	src.h = sz;
-
-	auto croppedImage = SDL_CreateSurface(squareSide, squareSide, originalImage->format);
-
-	SDL_BlitSurfaceScaled(originalImage, &src, croppedImage, nullptr, SDL_SCALEMODE_LINEAR);
-
-	SDL_Texture* texture = SDL_CreateTextureFromSurface(app.renderer, croppedImage);
-	if (texture == nullptr)
-	{
-		throw std::runtime_error("Couldn't create texture: " + std::string(SDL_GetError()));
-	}
-
-	SDL_DestroySurface(originalImage);
-	SDL_DestroySurface(croppedImage);
-
-	return texture;
-}
-
 int detachedI, detachedJ;
 
-void startLevel(Level level, int n)
+void startLevel(int levelIndex, int n)
 {
-	shuffler = Shuffler(time(nullptr), 50);
+	shuffler = Shuffler(time(nullptr), 1);
+
+	app.currentLevel = &*std::find_if(app.levels.begin(), app.levels.end(), [levelIndex](const Level& level) {
+		return level.index == levelIndex;
+	});
 
 	currentGameState = GameState::FadeIn;
-	currentLevelTexture = level.levelTexture;
 
 	detachedI = n - 1;
 	detachedJ = n - 1;
@@ -178,6 +132,16 @@ void startLevel(Level level, int n)
 	padding = 600 / n / 2;
 }
 
+Image LoadImage(std::string& filename)
+{
+	Image image(filename.c_str());
+	image.FitIntoSquare();
+	image.Resize(squareSide, squareSide);
+	return image;
+}
+
+const int victoryScreenIndex = -1;
+
 SDL_AppResult initGame(const char* levelsPath)
 {
 	// load levels
@@ -185,16 +149,14 @@ SDL_AppResult initGame(const char* levelsPath)
 
 	int index = 0;
 
+	app.levels.reserve(20);
+
 	for (const auto& entry : fs::directory_iterator(path))
 	{
-		if (entry.path().filename() == "winner.bmp")
-		{
-			app.winnerLevel = { index++, loadImage(entry.path(), squareSide) };
-		}
-		else
-		{
-			app.levels.emplace_back(index++, loadImage(entry.path(), squareSide));
-		}
+		auto filePath = entry.path().string();
+		bool isVictoryScreen = entry.path().stem() == "winner";
+
+		app.levels.emplace_back(isVictoryScreen ? victoryScreenIndex : index++, LoadImage(filePath), isVictoryScreen);
 	}
 
 	font = TTF_OpenFont("font/RobotoCondensed-Light.ttf", 24);
@@ -205,8 +167,7 @@ SDL_AppResult initGame(const char* levelsPath)
 		return SDL_APP_FAILURE;
 	}
 
-	app.currentLevel = app.levels.front();
-	startLevel(app.currentLevel, FieldSide);
+	startLevel(0, FieldSide);
 
 	// Create text texture of instructions for the player
 	const char* text = "Place each piece in its place\nUse arrow keys to move the pieces";
@@ -241,16 +202,20 @@ SDL_AppResult SDL_AppIterate(void *_)
 		{
 			currentGameState = GameState::End;
 
-			if (app.currentLevel != app.levels.back())
+			int levelCounts = std::count_if(app.levels.begin(), app.levels.end(), [](const Level& level) {
+				return !level.isVictoryScreen;
+			});
+			bool currentLevelIsLast = app.currentLevel->index == levelCounts - 1;
+			app.isWinnersLevel = currentLevelIsLast;
+
+			if (currentLevelIsLast)
 			{
-				app.currentLevel = app.levels[app.currentLevel.index + 1];
-				startLevel(app.currentLevel, FieldSide);
+				SDL_SetWindowTitle(app.window, "Win!");
+				startLevel(victoryScreenIndex, FieldSide);
 			}
 			else
 			{
-				SDL_SetWindowTitle(app.window, "Win!");
-				app.isWinnersLevel = true;
-				startLevel(app.winnerLevel, FieldSide);
+				startLevel(app.currentLevel->index + 1, FieldSide);
 			}
 		}
 	}
@@ -286,7 +251,8 @@ SDL_AppResult SDL_AppIterate(void *_)
 				1.0f * squareSide / FieldSide - padding * 2
 			};
 
-			SDL_RenderTexture(app.renderer, currentLevelTexture, &srcRect, &dstRect);
+			Image& currentLevelImage = app.currentLevel->levelImage;
+			currentLevelImage.Draw(app.renderer, &dstRect, &srcRect);
 		}
 	}
 

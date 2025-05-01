@@ -11,6 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 add_executable(pyatnashki
 	main.cpp
 	field.cpp
+	image.cpp
 	shuffler.cpp
 )
 
