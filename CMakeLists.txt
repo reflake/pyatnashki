@@ -12,6 +12,7 @@ add_executable(pyatnashki
 	main.cpp
 	field.cpp
 	image.cpp
+	level.cpp
 	shuffler.cpp
 )
 

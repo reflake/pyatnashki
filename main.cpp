@@ -8,6 +8,7 @@
 
 #include "field.h"
 #include "image.h"
+#include "level.h"
 #include "shuffler.h"
 
 #define SDL_MAIN_USE_CALLBACKS
@@ -37,30 +38,6 @@ enum class GameState
 	Shuffling,
 	InProgress,
 	End
-};
-
-struct Level
-{
-	int index = 0;
-	Image levelImage;
-	bool isVictoryScreen = false;
-
-	Level() = default;
-	Level(int index, Image&& levelImage, bool isVictoryScreen) : 
-		index(index), 
-		levelImage(std::move(levelImage)),
-		isVictoryScreen(isVictoryScreen)
-	{}
-
-	bool operator==(const Level& other) const
-	{
-		return index == other.index;
-	}
-
-	bool operator!=(const Level& other) const
-	{
-		return !(*this == other);
-	}
 };
 
 using std::cerr;
@@ -118,7 +95,7 @@ void startLevel(int levelIndex, int n)
 	shuffler = Shuffler(time(nullptr), 1);
 
 	app.currentLevel = &*std::find_if(app.levels.begin(), app.levels.end(), [levelIndex](const Level& level) {
-		return level.index == levelIndex;
+		return level.GetIndex() == levelIndex;
 	});
 
 	currentGameState = GameState::FadeIn;
@@ -203,9 +180,9 @@ SDL_AppResult SDL_AppIterate(void *_)
 			currentGameState = GameState::End;
 
 			int levelCounts = std::count_if(app.levels.begin(), app.levels.end(), [](const Level& level) {
-				return !level.isVictoryScreen;
+				return !level.IsVictoryScreen();
 			});
-			bool currentLevelIsLast = app.currentLevel->index == levelCounts - 1;
+			bool currentLevelIsLast = app.currentLevel->GetIndex() == levelCounts - 1;
 			app.isWinnersLevel = currentLevelIsLast;
 
 			if (currentLevelIsLast)
@@ -215,7 +192,7 @@ SDL_AppResult SDL_AppIterate(void *_)
 			}
 			else
 			{
-				startLevel(app.currentLevel->index + 1, FieldSide);
+				startLevel(app.currentLevel->GetIndex() + 1, FieldSide);
 			}
 		}
 	}
@@ -251,7 +228,7 @@ SDL_AppResult SDL_AppIterate(void *_)
 				1.0f * squareSide / FieldSide - padding * 2
 			};
 
-			Image& currentLevelImage = app.currentLevel->levelImage;
+			Image& currentLevelImage = app.currentLevel->GetLevelImage();
 			currentLevelImage.Draw(app.renderer, &dstRect, &srcRect);
 		}
 	}

@@ -17,7 +17,6 @@ Image::Image(const char* filePath)
 }
 
 Image::Image(const Image& other) :
-	width(other.width), height(other.height),
 	image(other.image)
 {
 	if (image != nullptr)
@@ -28,6 +27,15 @@ Image::Image(const Image& other) :
 		SDL_BlitSurface(originalImage, nullptr, newImage, nullptr);
 
 		image = newImage;
+	}
+}
+
+Image::Image(Image&& other) :
+	image(other.image)
+{
+	if (image != nullptr)
+	{
+		other.image = nullptr;
 	}
 }
 
