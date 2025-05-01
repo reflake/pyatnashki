@@ -39,4 +39,4 @@ target_link_libraries(pyatnashki
 		SDL3_ttf
 	)
 
-file(COPY font/RobotoCondensed-Light.ttf DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/font)
+file(COPY assets/font/RobotoCondensed-Light.ttf DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/assets/font)
