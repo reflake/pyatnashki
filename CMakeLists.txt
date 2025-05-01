@@ -19,7 +19,7 @@ target_include_directories(pyatnashki PRIVATE include)
 
 # Enable warnings
 if (MSVC)
-	target_compile_options(pyatnashki PRIVATE /W4)
+	target_compile_options(pyatnashki PRIVATE /W3)
 else()
 	target_compile_options(pyatnashki PRIVATE -Wall -Wextra -pedantic)
 endif()

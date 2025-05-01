@@ -1,6 +1,4 @@
-#include <algorithm>
 #include <stdexcept>
-#include <stdio.h>
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
@@ -58,16 +56,11 @@ struct Level
 	}
 };
 
-using std::cin;
-using std::cout;
-using std::endl;
 using std::cerr;
-using std::min;
-using std::max;
 
 SDL_AppResult initGame(const char* levelsPath);
 void handleKeys(SDL_Event* ev);
-void gameInputCycle(Field &field, int n);
+void gameInputCycle(Field &field);
 
 Field gameField;
 SDL_Texture* currentLevelTexture = nullptr;
@@ -93,7 +86,7 @@ struct App
 
 App app;
 
-SDL_AppResult SDL_AppInit(void **appState, int argc, char *args[])
+SDL_AppResult SDL_AppInit(void **_, int argc, char *args[])
 {
 	if (argc < 2)
 		return SDL_APP_FAILURE;
@@ -218,7 +211,7 @@ SDL_AppResult initGame(const char* levelsPath)
 	// Create text texture of instructions for the player
 	const char* text = "Place each piece in its place\nUse arrow keys to move the pieces";
 
-	SDL_Surface* textSurface = TTF_RenderText_Blended_Wrapped(font, text, 0, { 34, 34, 34 }, 400);
+	SDL_Surface* textSurface = TTF_RenderText_Blended_Wrapped(font, text, 0, { 34, 34, 34, 255 }, 400);
 	helpTexture = SDL_CreateTextureFromSurface(app.renderer, textSurface);
 
 	SDL_DestroySurface(textSurface);
@@ -226,11 +219,8 @@ SDL_AppResult initGame(const char* levelsPath)
 	return SDL_APP_CONTINUE;
 }
 
-SDL_AppResult SDL_AppIterate(void *appstate)
+SDL_AppResult SDL_AppIterate(void *_)
 {
-	SDL_Surface* screenSurface = nullptr;
-	screenSurface = SDL_GetWindowSurface(app.window);
-
 	int paddingSpeed = squareSide / FieldSide / 50;
 
 	if (currentGameState == GameState::FadeIn)
@@ -301,7 +291,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 	}
 
 	{
-		SDL_FRect dstRect = SDL_FRect{ 24, squareSide + 24 };
+		SDL_FRect dstRect = SDL_FRect{ 24, squareSide + 24, 0, 0 };
 		SDL_GetTextureSize(helpTexture, &dstRect.w, &dstRect.h);
 
 		SDL_RenderTexture(app.renderer, helpTexture, nullptr, &dstRect);
@@ -317,13 +307,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 			break;
 		case GameState::InProgress:
-			gameInputCycle(gameField, FieldSide);
+			gameInputCycle(gameField);
 
 			if (gameField.IsAssembled() && !app.isWinnersLevel)
 			{
 				currentGameState = GameState::FadeOut;
 			}
 			break;
+		default: break;
 	}
 
 	SDL_RenderPresent(app.renderer);
@@ -332,7 +323,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 	return SDL_APP_CONTINUE;
 }
 
-SDL_AppResult SDL_AppEvent(void *appState, SDL_Event *event)
+SDL_AppResult SDL_AppEvent(void *_, SDL_Event *event)
 {
 	switch (event->type) {
 		case SDL_EVENT_KEY_DOWN:
@@ -340,6 +331,7 @@ SDL_AppResult SDL_AppEvent(void *appState, SDL_Event *event)
 			break;
 		case SDL_EVENT_QUIT:
 			return SDL_APP_SUCCESS;
+		default: break;
 	}
 
 	return SDL_APP_CONTINUE;
@@ -364,7 +356,7 @@ void handleKeys(SDL_Event *ev)
 	}
 }
 
-void gameInputCycle(Field &field, int n)
+void gameInputCycle(Field &field)
 {
 	if (app.keyHorizontal == 0 && app.keyVertical == 0)
 		return;
@@ -378,7 +370,7 @@ void gameInputCycle(Field &field, int n)
 	app.keyVertical = 0;
 }
 
-void SDL_AppQuit(void *appState, SDL_AppResult result)
+void SDL_AppQuit(void *_, SDL_AppResult __)
 {
 	if (font != nullptr)
 	{
